@@ -46,7 +46,9 @@ export class Engine {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.hooks = hooks;
-    this.reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    this.systemReduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    this.reduceMotion = this.systemReduceMotion;
+    this.paused = false;
 
     this.w = 0;
     this.h = 0;
@@ -101,7 +103,7 @@ export class Engine {
       if (!this.running) return;
       const dt = Math.min(0.05, (now - this.last) / 1000);
       this.last = now;
-      this.update(dt * (this.slow ? 0.35 : 1));
+      this.update(this.paused ? 0 : dt * (this.slow ? 0.35 : 1));
       this.render();
       this.raf = requestAnimationFrame(frame);
     };
@@ -112,6 +114,15 @@ export class Engine {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.unbind?.();
+  }
+
+  setPaused(v) {
+    this.paused = v;
+    if (v) this.touching = false;
+  }
+
+  setCalm(v) {
+    this.reduceMotion = v || this.systemReduceMotion;
   }
 
   setSlow(v) {
@@ -144,7 +155,7 @@ export class Engine {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
     const down = (e) => {
-      if (this.slow) return;
+      if (this.slow || this.paused) return;
       c.setPointerCapture?.(e.pointerId);
       const p = pos(e);
       this.touching = true;

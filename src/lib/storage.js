@@ -8,6 +8,9 @@ export const defaultProfile = () => ({
   sent: [],
   caught: [],
   muted: false,
+  volume: 0.8,
+  calm: false, // reduced effects, independent of the OS setting
+  tutorialDone: false,
 });
 
 export function loadProfile() {

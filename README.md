@@ -14,7 +14,8 @@ npm run build
 - **Storms** never end the run — they cushion and bounce you back.
 - **Sanctuary:** pick a seed, then tap a floating island drifting below to plant it (costs sparks).
 - **Wind-Bottles:** release an anonymous kind note, and catch glass bottles drifting by.
-- Mute from the top dock. Headphones recommended (binaural drone).
+- Mute from the top dock; the gear in the bottom dock pauses the world and opens settings (volume, calm mode, replay tutorial, reset). Headphones recommended (binaural drone).
+- Installable: add to home screen for a fullscreen, offline-capable PWA (service worker is active in production builds only).
 
 ## Layout
 - `src/game/engine.js` – physics, procedural world, canvas renderer

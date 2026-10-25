@@ -1,4 +1,4 @@
-import { Sparkles, Volume2, VolumeX, Sprout, MailOpen, Wind } from 'lucide-react';
+import { Sparkles, Volume2, VolumeX, Sprout, MailOpen, Wind, Settings } from 'lucide-react';
 import { Pill } from './Glass.jsx';
 
 export default function Hud({ sparks, hud, muted, toast, sheetOpen, onMute, onOpen }) {
@@ -39,6 +39,13 @@ export default function Hud({ sparks, hud, muted, toast, sheetOpen, onMute, onOp
         <nav className={`glass flex gap-1 rounded-[22px] p-1.5 ${sheetOpen ? 'pointer-events-none' : 'pointer-events-auto'}`} aria-label="Menus">
           <DockButton icon={<Sprout size={20} />} label="Sanctuary" onClick={() => onOpen('sanctuary')} />
           <DockButton icon={<MailOpen size={20} />} label="Bottles" onClick={() => onOpen('bottles')} />
+          <button
+            onClick={() => onOpen('settings')}
+            aria-label="Pause and settings"
+            className="glass-button flex items-center justify-center border-transparent bg-transparent"
+          >
+            <Settings size={20} />
+          </button>
         </nav>
       </div>
     </div>

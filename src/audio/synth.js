@@ -22,6 +22,7 @@ export class Synth {
   constructor() {
     this.ctx = null;
     this.muted = false;
+    this.volume = 0.8;
     this.chordIndex = 0;
     this.nextChordAt = 0;
     this.timer = null;
@@ -39,7 +40,7 @@ export class Synth {
     const ctx = (this.ctx = new AC());
 
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.8;
+    this.master.gain.value = this.muted ? 0 : this.volume;
     const comp = ctx.createDynamicsCompressor();
     this.master.connect(comp).connect(ctx.destination);
 
@@ -72,10 +73,19 @@ export class Synth {
 
   setMuted(muted) {
     this.muted = muted;
+    this.applyGain();
+  }
+
+  setVolume(v) {
+    this.volume = v;
+    this.applyGain();
+  }
+
+  applyGain() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
-    this.master.gain.setTargetAtTime(muted ? 0 : 0.8, t, 0.12);
+    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, t, 0.12);
   }
 
   makeImpulse(seconds, decay) {
