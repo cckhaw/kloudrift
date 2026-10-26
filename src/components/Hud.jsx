@@ -1,4 +1,4 @@
-import { Sparkles, Volume2, VolumeX, Sprout, MailOpen, Wind, Settings } from 'lucide-react';
+import { Sparkles, Volume2, VolumeX, Sprout, MailOpen, Wind, Settings, Sun } from 'lucide-react';
 import { Pill } from './Glass.jsx';
 
 export default function Hud({ sparks, hud, muted, toast, sheetOpen, onMute, onOpen }) {
@@ -40,6 +40,13 @@ export default function Hud({ sparks, hud, muted, toast, sheetOpen, onMute, onOp
           <DockButton icon={<Sprout size={20} />} label="Sanctuary" onClick={() => onOpen('sanctuary')} />
           <DockButton icon={<MailOpen size={20} />} label="Bottles" onClick={() => onOpen('bottles')} />
           <button
+            onClick={() => onOpen('daily')}
+            aria-label="Today's gentle goals"
+            className="glass-button flex items-center justify-center border-transparent bg-transparent"
+          >
+            <Sun size={20} />
+          </button>
+          <button
             onClick={() => onOpen('settings')}
             aria-label="Pause and settings"
             className="glass-button flex items-center justify-center border-transparent bg-transparent"
@@ -56,7 +63,7 @@ function DockButton({ icon, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="glass-button flex items-center gap-2 border-transparent bg-transparent px-5 text-[15px] font-medium"
+      className="glass-button flex items-center gap-2 border-transparent bg-transparent px-4 text-[15px] font-medium"
     >
       {icon}
       {label}

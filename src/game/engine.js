@@ -1,4 +1,4 @@
-import { FLORA, floraById } from '../lib/flora.js';
+import { FLORA, floraById, gardenList, isUnlocked } from '../lib/flora.js';
 
 const SHIP_R = 14;
 const TAU = Math.PI * 2;
@@ -76,6 +76,10 @@ export class Engine {
     this.particles = [];
     this.stars = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random() * 0.7, s: rand(0.6, 1.8), p: Math.random() * TAU }));
 
+    this.meteors = [];
+    this.thermalSecs = 0;
+    this.lastZone = zoneFor(0);
+    this.nextHomeAt = 0;
     this.spawnX = 0;
     this.sinceThermal = 0;
     this.sinceStorm = 0;
@@ -236,7 +240,7 @@ export class Engine {
       for (let i = 0; i < 5; i++) this.sparks.push({ x: this.thermals.at(-1).x + rand(-30, 30), y: h * 0.75 - i * (h * 0.11), p: Math.random() * TAU });
     }
 
-    if (this.sinceStorm > 1000 && Math.random() < 0.55) {
+    if (this.sinceStorm > 1000 && Math.random() < clamp(0.55 - this.alt / 4000, 0.15, 0.55)) {
       this.sinceStorm = 0;
       const r = clamp(h * 0.1, 46, 90);
       const cx = x0 + width * 0.85;
@@ -246,7 +250,23 @@ export class Engine {
       this.storms.push({ x: cx, y: cy, blobs, seed: Math.random() * 100 });
     }
 
-    if (this.sinceIsland > 650 && Math.random() < 0.7) {
+    if (x0 >= this.nextHomeAt) {
+      // The home isle carries the player's saved garden and returns every so often.
+      this.nextHomeAt = x0 + 5200;
+      this.sinceIsland = 0;
+      const hw = 340;
+      const flora = gardenList(this.hooks.getProfile().garden, Math.floor(hw / 42)).map((type, slot) => ({ slot, type, born: -10 }));
+      this.islands.push({
+        id: this.nextId++,
+        home: true,
+        x: x0 + width * 0.3,
+        y: h - clamp(h * 0.22, 130, 200),
+        w: hw,
+        slots: Math.floor(hw / 42),
+        flora,
+        bob: Math.random() * TAU,
+      });
+    } else if (this.sinceIsland > 650 && Math.random() < 0.7) {
       this.sinceIsland = 0;
       const iw = rand(150, 220);
       this.islands.push({
@@ -269,6 +289,7 @@ export class Engine {
 
   cull() {
     const edge = this.cam - 400;
+    this.meteors = this.meteors.filter((m) => m.life < m.max);
     this.sparks = this.sparks.filter((s) => s.x > edge);
     this.thermals = this.thermals.filter((t) => t.x > edge);
     this.storms = this.storms.filter((s) => s.x > edge - 200);
@@ -284,7 +305,9 @@ export class Engine {
       const sx = isl.x - this.cam;
       if (Math.abs(p.x - sx) < isl.w * 0.6 && p.y > isl.y - 100 && p.y < isl.y + 70) {
         const species = floraById[profile.selectedFlora] || FLORA[0];
-        if (isl.flora.length >= isl.slots) {
+        if (!isUnlocked(species, profile.bestAltitude)) {
+          this.hooks.onToast(`${species.name} unlocks in the ${species.unlockLabel}`);
+        } else if (isl.flora.length >= isl.slots) {
           this.hooks.onToast('This island is in full bloom.');
         } else if (profile.sparks < species.cost) {
           this.hooks.onToast(`${species.name} needs ${species.cost} sparks`);
@@ -367,6 +390,31 @@ export class Engine {
     if (inThermal) this.alt += 45 * dt;
     else this.alt = Math.max(0, this.alt - 3 * dt);
     this.hooks.audio?.setWind(inThermal ? 1 : 0);
+
+    if (inThermal) {
+      this.thermalSecs += dt;
+      if (this.thermalSecs >= 1) {
+        this.hooks.onProgress?.('thermal', Math.floor(this.thermalSecs));
+        this.thermalSecs -= Math.floor(this.thermalSecs);
+      }
+    }
+    const zone = zoneFor(this.alt);
+    if (zone !== this.lastZone) {
+      if (this.alt > 0 && ZONES.findIndex((z) => z[1] === zone) > ZONES.findIndex((z) => z[1] === this.lastZone)) {
+        this.hooks.onToast(`Entering the ${zone}`);
+      }
+      this.lastZone = zone;
+    }
+
+    // Shooting stars once the sky is high and quiet
+    if (!this.reduceMotion && this.alt > 1200 && Math.random() < 0.15 * dt) {
+      this.meteors.push({ x: rand(this.w * 0.3, this.w), y: rand(0, this.h * 0.35), vx: -rand(260, 380), vy: rand(90, 160), life: 0, max: 0.9 });
+    }
+    for (const m of this.meteors) {
+      m.life += dt;
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+    }
 
     if (active) {
       const mult = inThermal ? 2 : 1;
@@ -509,7 +557,9 @@ export class Engine {
 
   phase() {
     const base = 0.5 + 0.5 * Math.sin(this.time * 0.02 - 1.9);
-    return clamp(base + Math.min(0.3, this.alt / 4000), 0, 1);
+    const lifted = clamp(base + Math.min(0.3, this.alt / 2500), 0, 1);
+    // Above ~700 m the sky settles into deep twilight, so the upper zones feel starlit.
+    return lerp(lifted, 0.05, clamp((this.alt - 700) / 700, 0, 1));
   }
 
   render() {
@@ -541,9 +591,14 @@ export class Engine {
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
 
-    this.drawClouds(0.06, 0.22, 1.7, 0.2, 0);
-    this.drawClouds(0.16, 0.45, 1.2, 0.28, 1);
-    this.drawClouds(0.32, 0.72, 0.9, 0.3, 2);
+    this.drawAurora();
+    this.drawMeteors();
+
+    // Cloud Sea (≈300–800 m) is thick with cloud; higher air thins out.
+    const cloudBoost = 1 + 0.7 * clamp(1 - Math.abs(this.alt - 550) / 350, 0, 1) - 0.4 * clamp((this.alt - 1200) / 600, 0, 1);
+    this.drawClouds(0.06, 0.22, 1.7, 0.2 * cloudBoost, 0);
+    this.drawClouds(0.16, 0.45, 1.2, 0.28 * cloudBoost, 1);
+    this.drawClouds(0.32, 0.72, 0.9, 0.3 * cloudBoost, 2);
 
     for (const t of this.thermals) this.drawThermal(t);
     for (const isl of this.islands) this.drawIsland(isl);
@@ -556,6 +611,48 @@ export class Engine {
 
     // Foreground wisps give depth
     this.drawClouds(0.9, 0.95, 0.7, 0.1, 1);
+  }
+
+  drawAurora() {
+    const a = clamp((this.alt - 700) / 500, 0, 1);
+    if (a <= 0.01) return;
+    const { ctx, w, h } = this;
+    const colors = ['78,168,222', '155,123,255', '123,223,242'];
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    colors.forEach((c, k) => {
+      for (const [lw, la] of [[64, 0.05], [38, 0.07], [16, 0.1]]) {
+        ctx.strokeStyle = `rgba(${c},${la * a})`;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        for (let x = -20; x <= w + 20; x += 14) {
+          const y = h * (0.16 + 0.08 * k) + Math.sin(x * 0.009 + this.time * 0.22 + k * 2) * 26 + Math.sin(x * 0.021 - this.time * 0.15) * 10;
+          if (x === -20) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
+  drawMeteors() {
+    const { ctx } = this;
+    for (const m of this.meteors) {
+      const a = Math.sin((m.life / m.max) * Math.PI);
+      const len = 70;
+      const n = Math.hypot(m.vx, m.vy);
+      const g = ctx.createLinearGradient(m.x, m.y, m.x - (m.vx / n) * len, m.y - (m.vy / n) * len);
+      g.addColorStop(0, `rgba(255,255,255,${a * 0.9})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x - (m.vx / n) * len, m.y - (m.vy / n) * len);
+      ctx.stroke();
+    }
   }
 
   drawClouds(parallax, yFrac, scale, alpha, seed) {
@@ -711,6 +808,13 @@ export class Engine {
     ctx.ellipse(x, y, hw, 12, 0, 0, TAU);
     ctx.fill();
 
+    if (isl.home) {
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('HOME ISLE', x, y + 30);
+    }
+
     // flora
     for (const f of isl.flora) {
       const sp = floraById[f.type];
@@ -722,7 +826,7 @@ export class Engine {
     // gentle affordance: a pulsing ring when tap-to-plant is possible
     const profile = this.hooks.getProfile();
     const sp = floraById[profile.selectedFlora] || FLORA[0];
-    if (!this.slow && isl.flora.length < isl.slots && profile.sparks >= sp.cost && x > 20 && x < this.w - 20) {
+    if (!this.slow && isl.flora.length < isl.slots && isUnlocked(sp, profile.bestAltitude) && profile.sparks >= sp.cost && x > 20 && x < this.w - 20) {
       const pr = 0.5 + 0.5 * Math.sin(this.time * 3);
       ctx.strokeStyle = `rgba(255,255,255,${0.25 + pr * 0.35})`;
       ctx.lineWidth = 1.5;
@@ -781,6 +885,61 @@ export class Engine {
       ctx.beginPath();
       ctx.arc(x + sway, y - 26 * s, 3.5 * s, 0, TAU);
       ctx.fill();
+    } else if (sp.id === 'lotus') {
+      ctx.fillStyle = '#6FB79A';
+      ctx.beginPath();
+      ctx.ellipse(x, y - 2, 15 * s, 4 * s, 0, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = sp.color;
+      for (let i = -2; i <= 2; i++) {
+        ctx.save();
+        ctx.translate(x + sway * 0.3, y - 6 * s);
+        ctx.rotate(i * 0.4);
+        ctx.beginPath();
+        ctx.ellipse(0, -9 * s, 4 * s, 10 * s, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#FFF3C4';
+      ctx.beginPath();
+      ctx.arc(x + sway * 0.3, y - 8 * s, 2.6 * s, 0, TAU);
+      ctx.fill();
+    } else if (sp.id === 'willow') {
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#5b7a68';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y - 24 * s);
+      ctx.stroke();
+      ctx.lineWidth = 1.6;
+      for (let i = -2; i <= 2; i++) {
+        const ex = x + i * 8 + sway * (0.6 + Math.abs(i) * 0.15);
+        ctx.strokeStyle = sp.color;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 24 * s);
+        ctx.quadraticCurveTo(x + i * 10, y - 34 * s, ex, y - 8 * s);
+        ctx.stroke();
+        ctx.fillStyle = '#FFE9A8';
+        ctx.beginPath();
+        ctx.arc(ex, y - 8 * s, 2 * s, 0, TAU);
+        ctx.fill();
+      }
+    } else if (sp.id === 'crystal') {
+      const pulse = 0.85 + 0.15 * Math.sin(this.time * 2 + seed);
+      for (const [dx, h, wd] of [[-8, 20, 5], [0, 32, 6], [8, 16, 4.5]]) {
+        ctx.fillStyle = sp.color;
+        ctx.globalAlpha = 0.75 * pulse;
+        ctx.beginPath();
+        ctx.moveTo(x + dx - wd * s, y);
+        ctx.lineTo(x + dx, y - h * s);
+        ctx.lineTo(x + dx + wd * s, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     } else {
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#6a5a8a';
