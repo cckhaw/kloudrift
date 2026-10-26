@@ -12,6 +12,7 @@ export const defaultProfile = () => ({
   calm: false, // reduced effects, independent of the OS setting
   tutorialDone: false,
   daily: { date: '', progress: {}, claimed: [] },
+  journey: { stars: {} }, // levelId → 0..3
 });
 
 export function loadProfile() {
@@ -20,7 +21,7 @@ export function loadProfile() {
     if (!raw) return defaultProfile();
     const parsed = JSON.parse(raw);
     const base = defaultProfile();
-    return { ...base, ...parsed, garden: { ...base.garden, ...(parsed.garden || {}) } };
+    return { ...base, ...parsed, garden: { ...base.garden, ...(parsed.garden || {}) }, journey: { stars: {}, ...(parsed.journey || {}) } };
   } catch {
     return defaultProfile();
   }

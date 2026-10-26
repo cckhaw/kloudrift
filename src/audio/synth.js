@@ -58,6 +58,7 @@ export class Synth {
 
     this.buildWind();
     this.buildDrone();
+    this.buildRain();
 
     this.nextChordAt = ctx.currentTime + 0.2;
     this.tick();
@@ -161,6 +162,81 @@ export class Synth {
       o.connect(p).connect(g);
       o.start();
     });
+  }
+
+  /** White noise through a high-pass: rain / snow hiss. Silent until setWeather raises it. */
+  buildRain() {
+    const ctx = this.ctx;
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2200;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    src.connect(hp).connect(this.rainGain).connect(this.master);
+    src.start();
+    this.weatherType = 'clear';
+    this.weatherIntensity = 0;
+  }
+
+  setWeather(type, intensity) {
+    this.weatherType = type;
+    this.weatherIntensity = intensity;
+    if (!this.ctx) return;
+    const level = type === 'rain' || type === 'storm' ? 0.1 * intensity : type === 'snow' ? 0.02 * intensity : 0;
+    this.rainGain.gain.setTargetAtTime(level, this.ctx.currentTime, 0.8);
+  }
+
+  setThermal(on) {
+    this.thermalWind = on ? 1 : 0;
+    this.setWind(Math.max(this.thermalWind, this.gustEnv || 0));
+  }
+
+  /** 0..1 gust envelope: opens the wind bed while a gust blows. */
+  setGust(env) {
+    if (!this.ctx) return;
+    this.gustEnv = env;
+    this.setWind(Math.max(this.thermalWind || 0, env));
+  }
+
+  thunder() {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const len = Math.floor(ctx.sampleRate * 3);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = (last + 0.04 * (Math.random() * 2 - 1)) / 1.04;
+      d[i] = last * 5;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(380, t);
+    lp.frequency.exponentialRampToValueAtTime(90, t + 2.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.4, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    src.connect(lp).connect(g).connect(this.master);
+    src.start(t);
+    src.stop(t + 3);
+  }
+
+  /** Level complete: a rising phrase, one extra note per star. */
+  fanfare(stars = 1) {
+    const phrase = [74, 78, 81, 86];
+    phrase.slice(0, 2 + stars).forEach((m, i) => this.note(m, { type: 'triangle', gain: 0.1, decay: 2, when: i * 0.14, pan: (i - 1.5) * 0.2 }));
+    this.currentChord().forEach((m, i) => this.note(m + 12, { type: 'sine', gain: 0.04, decay: 3, when: 0.5 + i * 0.05 }));
   }
 
   tick() {
@@ -270,6 +346,7 @@ export class Synth {
   /** 0..1 — opens the wind up while riding a thermal. */
   setWind(intensity) {
     if (!this.ctx) return;
+    this.lastWind = intensity;
     const t = this.ctx.currentTime;
     this.windGain.gain.setTargetAtTime(0.22 + intensity * 0.18, t, 0.4);
     this.windFilters.forEach((f, i) => f.frequency.setTargetAtTime(420 + i * 90 + intensity * 500, t, 0.5));
