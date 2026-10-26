@@ -41,3 +41,6 @@ npm test         # API + storage tests (no database needed)
 - **Safety:** text is limited to 140 characters and screened for links, contact details, spam, unkind wording and self-harm language (the last gets a supportive message instead of being shared). Releases are limited to 5/hour per IP, and a bottle is hidden after 2 reports. This is a basic word/pattern filter, not a full moderation service; add one before wide release.
 - **Privacy:** the client sends only a random anonymous id (stored on the device) and the text. The server stores a hash of that id and never returns it. IP addresses are only used, hashed, for rate limiting.
 - **Offline:** if the API is unreachable, releases stay on the device and catches fall back to built-in notes.
+
+## Deployments
+Production only: preview deployments are disabled on the Vercel project, and only the newest production deployment is kept. After each merge to `main`, once the new deployment is READY, run `npm run prune:deployments` (dry run) and then `npm run prune:deployments -- --yes` with `VERCEL_TOKEN` set. See `CLAUDE.md` for the full policy.
