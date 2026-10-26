@@ -4,11 +4,13 @@ import { Synth } from './audio/synth.js';
 import { loadProfile, saveProfile, defaultProfile } from './lib/storage.js';
 import { bottleService } from './lib/bottles.js';
 import { floraById } from './lib/flora.js';
+import { addProgress, rollDaily, unclaimedDone, GOAL_REWARD } from './lib/daily.js';
 import Hud from './components/Hud.jsx';
 import StartScreen from './components/StartScreen.jsx';
 import SanctuarySheet from './components/SanctuarySheet.jsx';
 import BottlesSheet, { CatchModal } from './components/BottlesSheet.jsx';
 import SettingsSheet from './components/SettingsSheet.jsx';
+import DailySheet from './components/DailySheet.jsx';
 import Tutorial from './components/Tutorial.jsx';
 
 export default function App() {
@@ -22,7 +24,7 @@ export default function App() {
   profileRef.current = profile;
 
   const [started, setStarted] = useState(false);
-  const [sheet, setSheet] = useState(null); // 'sanctuary' | 'bottles' | 'catch' | 'settings'
+  const [sheet, setSheet] = useState(null); // 'sanctuary' | 'bottles' | 'catch' | 'settings' | 'daily'
   const [tutorial, setTutorial] = useState(false);
   const [caught, setCaught] = useState(null);
   const [hud, setHud] = useState({ altitude: 0, zone: 'Low Drift', inThermal: false });
@@ -49,28 +51,36 @@ export default function App() {
     const engine = (engineRef.current = new Engine(canvasRef.current, {
       audio: synth,
       getProfile: () => profileRef.current,
-      onCollect: (n) => setProfile((p) => ({ ...p, sparks: p.sparks + n })),
+      onCollect: (n) => setProfile((p) => ({ ...p, sparks: p.sparks + n, daily: addProgress(p.daily, 'sparks', n) })),
+      onProgress: (type, n) => setProfile((p) => ({ ...p, daily: addProgress(p.daily, type, n) })),
       onPlant: (id) =>
         setProfile((p) => ({
           ...p,
           sparks: Math.max(0, p.sparks - floraById[id].cost),
           garden: { ...p.garden, [id]: (p.garden[id] || 0) + 1 },
+          daily: addProgress(p.daily, 'plant', 1),
         })),
       onBottle: async () => {
         setCaught(null);
         setSheet('catch');
         const b = await bottleService.catchOne(profileRef.current.caught);
         setCaught(b);
-        setProfile((p) => ({ ...p, caught: [b, ...p.caught].slice(0, 100) }));
+        setProfile((p) => ({ ...p, caught: [b, ...p.caught].slice(0, 100), daily: addProgress(p.daily, 'bottle', 1) }));
       },
       onToast: showToast,
       onHud: (h) => {
         setHud((prev) => (prev.altitude === h.altitude && prev.zone === h.zone && prev.inThermal === h.inThermal ? prev : h));
-        if (h.altitude > profileRef.current.bestAltitude) {
-          setProfile((p) => (h.altitude > p.bestAltitude ? { ...p, bestAltitude: h.altitude } : p));
+        const cur = profileRef.current;
+        if (h.altitude > cur.bestAltitude || h.altitude > (rollDaily(cur.daily).progress.altitude || 0)) {
+          setProfile((p) => ({
+            ...p,
+            bestAltitude: Math.max(p.bestAltitude, h.altitude),
+            daily: addProgress(p.daily, 'altitude', h.altitude),
+          }));
         }
       },
     }));
+    if (import.meta.env.DEV) window.__kloudrift = engine; // test hook, dev builds only
     engine.setCalm(profileRef.current.calm);
     engine.setSlow(true);
     engine.start();
@@ -80,6 +90,19 @@ export default function App() {
       synth.ctx?.close();
     };
   }, [showToast]);
+
+  // Gentle goals pay out automatically the moment they are complete.
+  useEffect(() => {
+    const done = unclaimedDone(profile.daily);
+    if (!done.length) return;
+    setProfile((p) => {
+      const d = rollDaily(p.daily);
+      const fresh = unclaimedDone(d);
+      if (!fresh.length) return p;
+      return { ...p, sparks: p.sparks + fresh.length * GOAL_REWARD, daily: { ...d, claimed: [...d.claimed, ...fresh.map((g) => g.id)] } };
+    });
+    showToast(`Gentle goal complete · +${done.length * GOAL_REWARD} sparks`);
+  }, [profile.daily, showToast]);
 
   // The world drifts in slow motion behind the start screen and any open sheet.
   useEffect(() => {
@@ -118,7 +141,7 @@ export default function App() {
 
   const releaseBottle = async (text) => {
     const b = await bottleService.release(text);
-    setProfile((p) => ({ ...p, sent: [b, ...p.sent].slice(0, 100) }));
+    setProfile((p) => ({ ...p, sent: [b, ...p.sent].slice(0, 100), daily: addProgress(p.daily, 'bottle', 1) }));
     setSheet(null);
     engineRef.current.launchBottle();
     synthRef.current.bottle();
@@ -163,6 +186,7 @@ export default function App() {
           onClose={() => setSheet(null)}
         />
       )}
+      {sheet === 'daily' && <DailySheet profile={profile} onClose={() => setSheet(null)} />}
       {tutorial && <Tutorial onDone={finishTutorial} />}
       {sheet === 'catch' && <CatchModal bottle={caught} onClose={() => setSheet(null)} />}
     </div>

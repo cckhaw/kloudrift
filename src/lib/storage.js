@@ -3,7 +3,7 @@ const KEY = 'kloudrift:v1';
 export const defaultProfile = () => ({
   sparks: 0,
   bestAltitude: 0,
-  garden: { fern: 0, bloom: 0, tree: 0 },
+  garden: { fern: 0, bloom: 0, tree: 0, lotus: 0, willow: 0, crystal: 0 },
   selectedFlora: 'fern',
   sent: [],
   caught: [],
@@ -11,6 +11,7 @@ export const defaultProfile = () => ({
   volume: 0.8,
   calm: false, // reduced effects, independent of the OS setting
   tutorialDone: false,
+  daily: { date: '', progress: {}, claimed: [] },
 });
 
 export function loadProfile() {

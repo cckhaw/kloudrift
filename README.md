@@ -12,7 +12,9 @@ npm run build
 - **Touch and drag** anywhere to glide; the airship follows with weight and inertia.
 - **Golden updrafts** lift you higher (altitude zones shift the sky) and double spark pickups.
 - **Storms** never end the run — they cushion and bounce you back.
-- **Sanctuary:** pick a seed, then tap a floating island drifting below to plant it (costs sparks).
+- **Sky zones:** Low Drift → Cloud Sea (thick clouds) → Stratosphere (aurora, deep twilight) → Starlit Calm (shooting stars, rare storms).
+- **Sanctuary:** pick a seed, then tap a floating island drifting below to plant it (costs sparks). Six species; Moon Lotus, Glow Willow and Star Crystal unlock at 300 / 800 / 1600 m. Your garden is saved and grows on the **Home Isle**, which returns regularly.
+- **Today:** three gentle daily goals (sun icon). Each pays 10 sparks automatically; there are no streaks or penalties.
 - **Wind-Bottles:** release an anonymous kind note, and catch glass bottles drifting by.
 - Mute from the top dock; the gear in the bottom dock pauses the world and opens settings (volume, calm mode, replay tutorial, reset). Headphones recommended (binaural drone).
 - Installable: add to home screen for a fullscreen, offline-capable PWA (service worker is active in production builds only).
