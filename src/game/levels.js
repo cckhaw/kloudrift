@@ -12,13 +12,18 @@ const bonuses = {
   thermal: (n) => ({ type: 'thermal', amount: n, label: `Ride golden updrafts for ${n} seconds` }),
   bottle: () => ({ type: 'bottle', amount: 1, label: 'Catch a wind-bottle' }),
   clean: () => ({ type: 'clean', amount: 0, label: 'Finish without touching a storm' }),
+  rings: (n) => ({ type: 'rings', amount: n, label: `Fly through ${n} golden rings` }),
   sparks: (pct) => ({ type: 'sparks', amount: pct, label: `Collect ${pct}% of the sparks` }),
 };
 
 // Defaults; each level only lists what differs.
 const base = { sparksMin: 6, sparksMax: 10, thermalChance: 0.6, stormChance: 0.3, stormScale: 1, bottleChance: 0.05, gust: null };
 
-const level = (world, n, name, extra) => ({ ...base, id: `${world}-${n}`, world, n, name, ...extra });
+const level = (world, n, name, extra) => ({ ...base, id: `${world}-${n}`, world, n, name, dim: '2d', ...extra });
+
+// 3D levels fly forward through space: `length` and `speed` are in world units (u, u/s).
+const base3d = { orbs: 120, rings: 8, obstacles: 10, gust: null };
+const level3 = (world, n, name, extra) => ({ ...base3d, id: `${world}-${n}`, world, n, name, dim: '3d', ...extra });
 
 export const WORLDS = [
   {
@@ -71,6 +76,35 @@ export const WORLDS = [
   },
 ];
 
+WORLDS.push(
+  {
+    id: 'canyon',
+    name: 'Crystal Canyon',
+    dim: '3d',
+    blurb: 'Fly forward through a glowing canyon. Thread the golden rings.',
+    theme: { scene: 'canyon', sky: { top: [34, 22, 66], bottom: [214, 120, 140] }, fog: [96, 62, 120], light: 0xffd2b0, crystals: [0xb78cff, 0x7fd8ff, 0xff9ad0, 0x9dffd0] },
+    levels: [
+      level3('canyon', 1, 'Amethyst Gate', { length: 2400, speed: 30, orbs: 120, rings: 8, obstacles: 8, weather: { type: 'clear', intensity: 0 }, bonus: bonuses.rings(5) }),
+      level3('canyon', 2, 'Glowmoss Bend', { length: 2800, speed: 33, orbs: 140, rings: 9, obstacles: 14, weather: { type: 'breeze', intensity: 0.5 }, gust: { every: [11, 16], strength: 700 }, bonus: bonuses.sparks(80) }),
+      level3('canyon', 3, 'Veil of Mist', { length: 3200, speed: 36, orbs: 160, rings: 12, obstacles: 20, weather: { type: 'rain', intensity: 0.45, fog: 0.5 }, gust: { every: [9, 14], strength: 850 }, bonus: bonuses.rings(10) }),
+      level3('canyon', 4, 'Thunder Hollow', { length: 3600, speed: 40, orbs: 180, rings: 12, obstacles: 28, weather: { type: 'storm', intensity: 0.85 }, gust: { every: [7, 11], strength: 1000 }, bonus: bonuses.clean() }),
+    ],
+  },
+  {
+    id: 'starfall',
+    name: 'Starfall Run',
+    dim: '3d',
+    blurb: 'An open night sky of drifting rock and shooting stars.',
+    theme: { scene: 'starfall', sky: { top: [4, 6, 24], bottom: [38, 34, 92] }, fog: [20, 22, 52], light: 0x9fb4ff, crystals: [0x8fa3ff, 0xc3a6ff] },
+    levels: [
+      level3('starfall', 1, 'Evening Star', { length: 2800, speed: 34, orbs: 140, rings: 10, obstacles: 10, weather: { type: 'clear', intensity: 0 }, bonus: bonuses.rings(8) }),
+      level3('starfall', 2, 'Meteor Shower', { length: 3200, speed: 38, orbs: 160, rings: 10, obstacles: 18, weather: { type: 'breeze', intensity: 0.6 }, gust: { every: [10, 14], strength: 850 }, bonus: bonuses.sparks(85) }),
+      level3('starfall', 3, 'Frozen Veil', { length: 3600, speed: 42, orbs: 180, rings: 14, obstacles: 22, weather: { type: 'snow', intensity: 0.7, fog: 0.25 }, gust: { every: [8, 12], strength: 950 }, bonus: bonuses.rings(12) }),
+      level3('starfall', 4, "Comet's Tail", { length: 4000, speed: 46, orbs: 200, rings: 14, obstacles: 30, weather: { type: 'snow', intensity: 1, fog: 0.3 }, gust: { every: [6, 10], strength: 1100 }, bonus: bonuses.clean() }),
+    ],
+  },
+);
+
 export const ALL_LEVELS = WORLDS.flatMap((w) => w.levels);
 export const levelById = Object.fromEntries(ALL_LEVELS.map((l) => [l.id, l]));
 export const worldOf = (lvl) => WORLDS.find((w) => w.id === lvl.world);
@@ -92,6 +126,8 @@ export function bonusProgress(bonus, stats, total) {
       return { value: Math.min(Math.floor(stats.thermal), bonus.amount), target: bonus.amount, done: stats.thermal >= bonus.amount };
     case 'bottle':
       return { value: Math.min(stats.bottles, 1), target: 1, done: stats.bottles >= 1 };
+    case 'rings':
+      return { value: Math.min(stats.rings || 0, bonus.amount), target: bonus.amount, done: (stats.rings || 0) >= bonus.amount };
     case 'clean':
       return { value: stats.bumps, target: 0, done: stats.bumps === 0 };
     case 'sparks': {

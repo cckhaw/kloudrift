@@ -321,6 +321,10 @@ export class Synth {
     [62, 66, 69, 74, 78].forEach((m, i) => this.note(m, { type: 'sine', gain: 0.08, when: i * 0.08, decay: 2 }));
   }
 
+  ring() {
+    [79, 83, 86, 91].forEach((m, i) => this.note(m, { type: 'sine', gain: 0.07, decay: 1.4, when: i * 0.06, pan: (i - 1.5) * 0.15 }));
+  }
+
   bottle() {
     this.note(86, { type: 'sine', gain: 0.07, decay: 1.6 });
     this.note(91, { type: 'sine', gain: 0.05, decay: 1.8, when: 0.12 });

@@ -21,4 +21,6 @@ function localApi() {
 
 export default defineConfig({
   plugins: [react(), localApi()],
+  // three.js lives in its own lazily-loaded chunk (only fetched when a 3D level starts), so its size is intentional.
+  build: { chunkSizeWarningLimit: 700 },
 });

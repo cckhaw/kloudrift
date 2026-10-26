@@ -18,7 +18,11 @@ import { LevelIntro, LevelComplete } from './components/LevelSheets.jsx';
 
 export default function App() {
   const canvasRef = useRef(null);
+  const canvas3dRef = useRef(null);
   const engineRef = useRef(null);
+  const engine3dRef = useRef(null); // created on first 3D level (lazy chunk)
+  const hooksRef = useRef(null);
+  const dimRef = useRef('2d');
   const synthRef = useRef(null);
   const toastTimer = useRef(0);
   const pendingMode = useRef(null); // mode to launch once the first-run tutorial ends
@@ -31,6 +35,7 @@ export default function App() {
   const [sheet, setSheet] = useState(null); // 'sanctuary' | 'bottles' | 'catch' | 'settings' | 'daily' | 'journey' | 'intro' | 'levelDone'
   const [tutorial, setTutorial] = useState(false);
   const [caught, setCaught] = useState(null);
+  const [dim, setDim] = useState('2d'); // which renderer currently owns the screen
   const [level, setLevel] = useState(null); // level currently loaded in the engine
   const [result, setResult] = useState(null); // last level-complete payload
   const [hud, setHud] = useState({ mode: 'free', altitude: 0, zone: 'Low Drift', inThermal: false });
@@ -54,7 +59,7 @@ export default function App() {
     synth.muted = profileRef.current.muted;
     synth.volume = profileRef.current.volume;
 
-    const engine = (engineRef.current = new Engine(canvasRef.current, {
+    const hooks = {
       audio: synth,
       getProfile: () => profileRef.current,
       onCollect: (n) => setProfile((p) => ({ ...p, sparks: p.sparks + n, daily: addProgress(p.daily, 'sparks', n) })),
@@ -97,13 +102,17 @@ export default function App() {
           }));
         }
       },
-    }));
+    };
+    hooksRef.current = hooks;
+    const engine = (engineRef.current = new Engine(canvasRef.current, hooks));
     if (import.meta.env.DEV) Object.assign(window, { __kloudrift: engine, __levels: levelById }); // test hooks, dev builds only
     engine.setCalm(profileRef.current.calm);
     engine.setSlow(true);
     engine.start();
     return () => {
       engine.destroy();
+      engine3dRef.current?.destroy();
+      engine3dRef.current = null;
       clearInterval(synth.timer);
       synth.ctx?.close();
     };
@@ -124,21 +133,73 @@ export default function App() {
 
   // The world drifts in slow motion behind the start screen and any open sheet.
   useEffect(() => {
-    engineRef.current?.setSlow(!started || sheet !== null || tutorial);
-    engineRef.current?.setPaused(sheet === 'settings');
-  }, [started, sheet, tutorial]);
+    const slow = !started || sheet !== null || tutorial;
+    for (const e of [engineRef.current, engine3dRef.current]) {
+      e?.setSlow(slow);
+      e?.setPaused(sheet === 'settings');
+    }
+  }, [started, sheet, tutorial, dim]);
+
+  // The 3D canvas is hidden until a 3D level shows it, so it needs a size when it appears.
+  useEffect(() => {
+    if (dim === '3d') requestAnimationFrame(() => engine3dRef.current?.resize());
+  }, [dim]);
+
+  /** Hand the screen to the 2D or 3D renderer. */
+  const useRenderer = (next) => {
+    dimRef.current = next;
+    setDim(next);
+    if (next === '3d') {
+      engineRef.current.setSuspended(true);
+      engine3dRef.current.start();
+    } else {
+      engine3dRef.current?.stop();
+      engineRef.current.setSuspended(false);
+    }
+  };
+
+  /** Loads the 3D engine on first use. Returns false (with a message) if this device cannot run it. */
+  const ensure3d = async () => {
+    if (engine3dRef.current) return true;
+    showToast('Loading 3D world…');
+    try {
+      const mod = await import('./game/engine3d.js');
+      if (!mod.webglAvailable()) throw new Error('no webgl');
+      const e = new mod.Engine3D(canvas3dRef.current, hooksRef.current);
+      e.setCalm(profileRef.current.calm);
+      engine3dRef.current = e;
+      if (import.meta.env.DEV) window.__k3d = e;
+      return true;
+    } catch (err) {
+      console.warn('3D unavailable', err);
+      showToast('3D worlds need WebGL, which this device cannot run.');
+      return false;
+    }
+  };
 
   const startFree = () => {
+    useRenderer('2d');
     engineRef.current.startFree();
     setLevel(null);
     setSheet(null);
     showToast('Free Drift — no goal, just sky');
   };
 
-  const openLevel = (lvl) => {
-    engineRef.current.startLevel(lvl);
+  const loadLevel = async (lvl) => {
+    if (lvl.dim === '3d') {
+      if (!(await ensure3d())) return false;
+      useRenderer('3d');
+      engine3dRef.current.startLevel(lvl);
+    } else {
+      useRenderer('2d');
+      engineRef.current.startLevel(lvl);
+    }
     setLevel(lvl);
-    setSheet('intro');
+    return true;
+  };
+
+  const openLevel = async (lvl) => {
+    if (await loadLevel(lvl)) setSheet('intro');
   };
 
   const launch = (mode) => {
@@ -163,7 +224,10 @@ export default function App() {
   const updateSettings = (patch) => {
     if ('muted' in patch) synthRef.current.setMuted(patch.muted);
     if ('volume' in patch) synthRef.current.setVolume(patch.volume);
-    if ('calm' in patch) engineRef.current.setCalm(patch.calm);
+    if ('calm' in patch) {
+      engineRef.current.setCalm(patch.calm);
+      engine3dRef.current?.setCalm(patch.calm);
+    }
     setProfile((p) => ({ ...p, ...patch }));
   };
 
@@ -200,6 +264,7 @@ export default function App() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-twilight font-sans">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-label="Sky" />
+      <canvas ref={canvas3dRef} className={`absolute inset-0 h-full w-full ${dim === '3d' ? '' : 'hidden'}`} aria-label="3D sky" />
 
       {started && (
         <Hud
@@ -247,9 +312,8 @@ export default function App() {
           newStars={result.newStars}
           hasNext={Boolean(nextLevel(result.level))}
           onNext={() => openLevel(nextLevel(result.level))}
-          onRetry={() => {
-            engineRef.current.startLevel(result.level);
-            setSheet(null);
+          onRetry={async () => {
+            if (await loadLevel(result.level)) setSheet(null);
           }}
           onMap={() => setSheet('journey')}
         />

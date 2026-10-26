@@ -12,6 +12,7 @@ npm test         # API + storage tests (no database needed)
 ## Play
 - **Journey:** four worlds of four levels. Every level has one goal: **fly to the glowing Beacon**. Up to three optional stars: reach the Beacon, collect 60% of the sparks, finish the bonus challenge (updraft time, catch a bottle, no storm touches, or a high spark share). Each new star pays 15 sparks. There is no timer and no game over; a level unlocks once the previous one has a star.
 - **Weather:** worlds escalate from clear dawn skies to breezes, fog and rain, thunderstorms and snow. Fog hides what is ahead, and **wind gusts** warn you, then push the ship and loosen your steering for a couple of seconds. Lightning is light and sound only (calm mode switches the flashes off).
+- **3D worlds:** Crystal Canyon and Starfall Run fly forward through 3D space (Three.js, downloaded only when you first start a 3D level). Same one-thumb steering, sparks, soft-bounce storm clouds, weather and gusts, plus golden rings to thread. Devices without WebGL get a friendly message and the 2D worlds keep working.
 - **Free Drift:** the original endless, goal-free mode with altitude zones.
 - **Touch and drag** anywhere to glide; the airship follows with weight and inertia.
 - **Golden updrafts** lift you higher (altitude zones shift the sky) and double spark pickups.
@@ -26,7 +27,8 @@ npm test         # API + storage tests (no database needed)
 ## Layout
 - `src/game/engine.js` – physics, procedural world, canvas renderer, level lifecycle
 - `src/game/levels.js` – worlds, levels, star and unlock rules (tested)
-- `src/game/weather.js` – rain, snow, fog, lightning, wind gusts
+- `src/game/weather.js` – rain, snow, fog, lightning, wind gusts (shared by 2D and 3D)
+- `src/game/engine3d.js` – Three.js renderer and simulation for 3D levels (lazy-loaded)
 - `src/audio/synth.js` – Web Audio wind, binaural drone, chord pad, chimes
 - `src/lib/` – storage (localStorage), flora, daily goals, wind-bottle client
 - `api/` – wind-bottle serverless function, storage adapter, moderation
