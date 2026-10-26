@@ -6,6 +6,7 @@ A cozy, one-thumb cloud-flight prototype for mobile browsers. React + Vite, HTML
 npm install
 npm run dev      # then open on your phone via the printed network URL
 npm run build
+npm test         # API + storage tests (no database needed)
 ```
 
 ## Play
@@ -29,7 +30,7 @@ npm run build
 ## Wind-bottle backend
 `api/bottles.js` is a Vercel serverless function (also served by `vite` / `vite preview` locally).
 
-- **Storage:** set `KV_REST_API_URL` and `KV_REST_API_TOKEN` (Vercel KV / Upstash Redis, see `.env.example`) for durable, shared bottles. Without them it falls back to in-memory storage, which on serverless is per-instance and resets, so bottles will not reliably reach other players.
+- **Storage:** with `DATABASE_URL` / `POSTGRES_URL` set (Neon via Vercel Storage, free plan) bottles are stored in Postgres; tables are created automatically on first use. Redis REST credentials (`KV_REST_API_URL` + `KV_REST_API_TOKEN`) also work. With neither, an in-memory store is used: fine locally, but on serverless it is per-instance and resets, so bottles will not reliably reach other players. Check the active backend at `/api/bottles?status=1`.
 - **Safety:** text is limited to 140 characters and screened for links, contact details, spam, unkind wording and self-harm language (the last gets a supportive message instead of being shared). Releases are limited to 5/hour per IP, and a bottle is hidden after 2 reports. This is a basic word/pattern filter, not a full moderation service; add one before wide release.
 - **Privacy:** the client sends only a random anonymous id (stored on the device) and the text. The server stores a hash of that id and never returns it. IP addresses are only used, hashed, for rate limiting.
 - **Offline:** if the API is unreachable, releases stay on the device and catches fall back to built-in notes.
