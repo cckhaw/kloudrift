@@ -139,13 +139,20 @@ export default function App() {
     showToast('A fresh sky');
   };
 
+  const reportBottle = async (b) => {
+    await bottleService.report(b.id);
+    setProfile((p) => ({ ...p, caught: p.caught.filter((c) => c.id !== b.id) }));
+    setSheet(null);
+    showToast('Thanks — that bottle has been reported');
+  };
+
   const releaseBottle = async (text) => {
-    const b = await bottleService.release(text);
+    const { bottle: b, shared } = await bottleService.release(text); // may throw BottleRejected → shown in the sheet
     setProfile((p) => ({ ...p, sent: [b, ...p.sent].slice(0, 100), daily: addProgress(p.daily, 'bottle', 1) }));
     setSheet(null);
     engineRef.current.launchBottle();
     synthRef.current.bottle();
-    showToast('Your bottle drifts away');
+    showToast(shared ? 'Your bottle drifts away' : 'Offline — your bottle stays on this device');
   };
 
   return (
@@ -188,7 +195,7 @@ export default function App() {
       )}
       {sheet === 'daily' && <DailySheet profile={profile} onClose={() => setSheet(null)} />}
       {tutorial && <Tutorial onDone={finishTutorial} />}
-      {sheet === 'catch' && <CatchModal bottle={caught} onClose={() => setSheet(null)} />}
+      {sheet === 'catch' && <CatchModal bottle={caught} onReport={reportBottle} onClose={() => setSheet(null)} />}
     </div>
   );
 }

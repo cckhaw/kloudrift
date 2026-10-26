@@ -15,15 +15,21 @@ npm run build
 - **Sky zones:** Low Drift → Cloud Sea (thick clouds) → Stratosphere (aurora, deep twilight) → Starlit Calm (shooting stars, rare storms).
 - **Sanctuary:** pick a seed, then tap a floating island drifting below to plant it (costs sparks). Six species; Moon Lotus, Glow Willow and Star Crystal unlock at 300 / 800 / 1600 m. Your garden is saved and grows on the **Home Isle**, which returns regularly.
 - **Today:** three gentle daily goals (sun icon). Each pays 10 sparks automatically; there are no streaks or penalties.
-- **Wind-Bottles:** release an anonymous kind note, and catch glass bottles drifting by.
+- **Wind-Bottles:** release an anonymous kind note, and catch glass bottles released by other wanderers (or a note from the sky when none are around). Caught bottles can be reported.
 - Mute from the top dock; the gear in the bottom dock pauses the world and opens settings (volume, calm mode, replay tutorial, reset). Headphones recommended (binaural drone).
 - Installable: add to home screen for a fullscreen, offline-capable PWA (service worker is active in production builds only).
 
 ## Layout
 - `src/game/engine.js` – physics, procedural world, canvas renderer
 - `src/audio/synth.js` – Web Audio wind, binaural drone, chord pad, chimes
-- `src/lib/` – storage (localStorage), flora, wind-bottle service
+- `src/lib/` – storage (localStorage), flora, daily goals, wind-bottle client
+- `api/` – wind-bottle serverless function, storage adapter, moderation
 - `src/components/` – glassmorphic HUD, start screen, Sanctuary and Bottles sheets
 
-## Prototype notes
-Wind-bottles are served from an on-device pool of kind notes; `src/lib/bottles.js` is async so a real backend can replace it. Any backend showing strangers' text needs server-side moderation and rate limiting.
+## Wind-bottle backend
+`api/bottles.js` is a Vercel serverless function (also served by `vite` / `vite preview` locally).
+
+- **Storage:** set `KV_REST_API_URL` and `KV_REST_API_TOKEN` (Vercel KV / Upstash Redis, see `.env.example`) for durable, shared bottles. Without them it falls back to in-memory storage, which on serverless is per-instance and resets, so bottles will not reliably reach other players.
+- **Safety:** text is limited to 140 characters and screened for links, contact details, spam, unkind wording and self-harm language (the last gets a supportive message instead of being shared). Releases are limited to 5/hour per IP, and a bottle is hidden after 2 reports. This is a basic word/pattern filter, not a full moderation service; add one before wide release.
+- **Privacy:** the client sends only a random anonymous id (stored on the device) and the text. The server stores a hash of that id and never returns it. IP addresses are only used, hashed, for rate limiting.
+- **Offline:** if the API is unreachable, releases stay on the device and catches fall back to built-in notes.
