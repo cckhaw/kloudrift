@@ -1,4 +1,6 @@
 import { FLORA, floraById, gardenList, isUnlocked } from '../lib/flora.js';
+import { Weather } from './weather.js';
+import { sparkTarget, bonusProgress, evaluateStars, worldOf } from './levels.js';
 
 const SHIP_R = 14;
 const TAU = Math.PI * 2;
@@ -35,6 +37,8 @@ const ZONES = [
   [800, 'Stratosphere'],
   [1600, 'Starlit Calm'],
 ];
+const FREE_PARAMS = { sparksMin: 6, sparksMax: 10, thermalChance: 0.6, stormChance: null, stormScale: 1, bottleChance: 0.09 };
+
 export const zoneFor = (alt) => ZONES.reduce((z, [min, name]) => (alt >= min ? name : z), ZONES[0][1]);
 
 export class Engine {
@@ -86,6 +90,15 @@ export class Engine {
     this.sinceIsland = 0;
     this.nextId = 1;
 
+    this.mode = 'free'; // 'free' (endless drift) | 'level' (Journey)
+    this.level = null;
+    this.theme = null;
+    this.params = FREE_PARAMS;
+    this.stats = { sparks: 0, thermal: 0, bumps: 0, bottles: 0 };
+    this.sparksTotal = 0;
+    this.finished = false;
+    this.weather = new Weather(this);
+
     this.sprites = this.buildCloudSprites();
     this.bindEvents();
     this.resize();
@@ -118,6 +131,66 @@ export class Engine {
     this.running = false;
     cancelAnimationFrame(this.raf);
     this.unbind?.();
+  }
+
+  /** Clears the world and puts the ship back at the start. */
+  resetWorld() {
+    this.cam = 0;
+    this.alt = 0;
+    this.time = 0;
+    this.sparks = [];
+    this.thermals = [];
+    this.storms = [];
+    this.islands = [];
+    this.bottles = [];
+    this.outgoing = [];
+    this.particles = [];
+    this.meteors = [];
+    this.thermalSecs = 0;
+    this.lastZone = zoneFor(0);
+    this.nextHomeAt = 0;
+    this.sinceThermal = 0;
+    this.sinceStorm = 0;
+    this.sinceIsland = 0;
+    this.finished = false;
+    this.stats = { sparks: 0, thermal: 0, bumps: 0, bottles: 0 };
+    this.ship.x = this.w * 0.3;
+    this.ship.y = this.h * 0.45;
+    this.ship.vx = this.ship.vy = 0;
+    this.target.x = this.ship.x;
+    this.target.y = this.ship.y;
+    this.spawnX = this.w * 0.7;
+  }
+
+  startFree() {
+    this.mode = 'free';
+    this.level = null;
+    this.theme = null;
+    this.params = FREE_PARAMS;
+    this.resetWorld();
+    this.weather.set(null);
+    this.fillWorld();
+  }
+
+  startLevel(level) {
+    this.mode = 'level';
+    this.level = level;
+    this.theme = worldOf(level).theme;
+    this.params = level;
+    this.resetWorld();
+    this.weather.set(level.weather, level.gust);
+
+    // The whole level is laid out up front so the star target is known and always reachable.
+    while (this.spawnX < level.length + 200) this.spawnChunk();
+    if (level.bonus.type === 'bottle' && !this.bottles.some((b) => b.x < level.length)) {
+      this.bottles.push({ x: level.length * 0.5, y: this.h * 0.4, p: 0 });
+    }
+    const limit = level.length;
+    this.sparks = this.sparks.filter((s) => s.x < limit - 80);
+    this.thermals = this.thermals.filter((t) => t.x < limit - 150);
+    this.storms = this.storms.filter((s) => s.x < limit - 250);
+    this.bottles = this.bottles.filter((b) => b.x < limit - 80);
+    this.sparksTotal = this.sparks.length;
   }
 
   setPaused(v) {
@@ -209,6 +282,7 @@ export class Engine {
   // ───────────────────────── world generation ─────────────────────────
 
   fillWorld() {
+    if (this.mode === 'level') return;
     while (this.spawnX < this.cam + this.w + 500) this.spawnChunk();
   }
 
@@ -221,7 +295,8 @@ export class Engine {
     this.sinceIsland += width;
 
     // Spark ribbon: a gentle sine arc
-    const count = Math.floor(rand(6, 10));
+    const P = this.params;
+    const count = Math.floor(rand(P.sparksMin, P.sparksMax));
     const baseY = rand(h * 0.2, h * 0.62);
     const amp = rand(20, 70);
     const phase = rand(0, TAU);
@@ -233,16 +308,17 @@ export class Engine {
       });
     }
 
-    if (this.sinceThermal > 1300 && Math.random() < 0.6) {
+    if (this.sinceThermal > 1300 && Math.random() < P.thermalChance) {
       this.sinceThermal = 0;
       this.thermals.push({ x: x0 + width * 0.55, w: rand(100, 140), seed: Math.random() * 100 });
       // extra sparks inside the column
       for (let i = 0; i < 5; i++) this.sparks.push({ x: this.thermals.at(-1).x + rand(-30, 30), y: h * 0.75 - i * (h * 0.11), p: Math.random() * TAU });
     }
 
-    if (this.sinceStorm > 1000 && Math.random() < clamp(0.55 - this.alt / 4000, 0.15, 0.55)) {
+    const stormChance = P.stormChance ?? clamp(0.55 - this.alt / 4000, 0.15, 0.55);
+    if (this.sinceStorm > 1000 && x0 > 700 && Math.random() < stormChance) {
       this.sinceStorm = 0;
-      const r = clamp(h * 0.1, 46, 90);
+      const r = clamp(h * 0.1, 46, 90) * P.stormScale;
       const cx = x0 + width * 0.85;
       const cy = rand(h * 0.25, h * 0.6);
       const blobs = [{ dx: 0, dy: 0, r }];
@@ -280,7 +356,7 @@ export class Engine {
       });
     }
 
-    if (Math.random() < 0.09) {
+    if (Math.random() < P.bottleChance) {
       this.bottles.push({ x: x0 + width * 0.5, y: rand(h * 0.25, h * 0.55), p: Math.random() * TAU });
     }
 
@@ -345,7 +421,7 @@ export class Engine {
     this.time += dt;
     const { ship, target } = this;
     const active = !this.slow;
-    const speed = 80 + Math.min(60, this.alt * 0.03);
+    const speed = this.level ? this.level.speed : 80 + Math.min(60, this.alt * 0.03);
     this.cam += speed * dt;
     this.fillWorld();
     this.cull();
@@ -362,7 +438,8 @@ export class Engine {
 
     // Weight-based inertia: critically-damped-ish spring toward the finger.
     if (active) {
-      const k = this.touching ? 20 : 2.5;
+      const gust = this.weather.update(dt, true);
+      const k = (this.touching ? 20 : 2.5) * (1 - 0.5 * gust.grip); // a gust loosens your grip on the steering
       const c = this.touching ? 7.6 : 3.2;
       if (!this.touching) {
         target.x += (ship.x - target.x) * Math.min(1, 1.2 * dt);
@@ -372,6 +449,8 @@ export class Engine {
       let ay = (target.y - ship.y) * k - ship.vy * c;
       if (!this.touching) ay += 10; // settle very gently
       if (inThermal) ay -= 380;
+      ax += gust.ax;
+      ay += gust.ay;
       ship.vx += ax * dt;
       ship.vy += ay * dt;
       const sp = Math.hypot(ship.vx, ship.vy);
@@ -384,14 +463,16 @@ export class Engine {
       ship.x = clamp(ship.x, 24, this.w - 24);
       ship.y = clamp(ship.y, 60, this.h - 70);
     }
+    else this.weather.update(dt, false);
     ship.angle = lerp(ship.angle, clamp(ship.vy / 420, -0.45, 0.45), Math.min(1, 6 * dt));
 
     // Altitude
     if (inThermal) this.alt += 45 * dt;
     else this.alt = Math.max(0, this.alt - 3 * dt);
-    this.hooks.audio?.setWind(inThermal ? 1 : 0);
+    this.hooks.audio?.setThermal(inThermal);
 
     if (inThermal) {
+      this.stats.thermal += dt;
       this.thermalSecs += dt;
       if (this.thermalSecs >= 1) {
         this.hooks.onProgress?.('thermal', Math.floor(this.thermalSecs));
@@ -399,7 +480,7 @@ export class Engine {
       }
     }
     const zone = zoneFor(this.alt);
-    if (zone !== this.lastZone) {
+    if (zone !== this.lastZone && this.mode === 'free') {
       if (this.alt > 0 && ZONES.findIndex((z) => z[1] === zone) > ZONES.findIndex((z) => z[1] === this.lastZone)) {
         this.hooks.onToast(`Entering the ${zone}`);
       }
@@ -407,7 +488,7 @@ export class Engine {
     }
 
     // Shooting stars once the sky is high and quiet
-    if (!this.reduceMotion && this.alt > 1200 && Math.random() < 0.15 * dt) {
+    if (!this.reduceMotion && this.mode === 'free' && this.alt > 1200 && Math.random() < 0.15 * dt) {
       this.meteors.push({ x: rand(this.w * 0.3, this.w), y: rand(0, this.h * 0.35), vx: -rand(260, 380), vy: rand(90, 160), life: 0, max: 0.9 });
     }
     for (const m of this.meteors) {
@@ -438,6 +519,7 @@ export class Engine {
           this.sparks.splice(i, 1);
           this.burst(s.x - this.cam, s.y, inThermal ? '#FFD700' : '#FFE9A8', inThermal ? 14 : 8);
           this.hooks.audio?.spark(mult);
+          this.stats.sparks++;
           this.hooks.onCollect(mult);
         }
       }
@@ -466,6 +548,7 @@ export class Engine {
             ship.vy += ny * 120 * dt * 10;
             if (this.bumpCooldown === 0) {
               this.bumpCooldown = 0.8;
+              this.stats.bumps++;
               this.hooks.audio?.bump();
               navigator.vibrate?.(12);
               this.burst(ship.x, ship.y, '#B8B2E6', 6);
@@ -484,6 +567,7 @@ export class Engine {
           this.bottles.splice(i, 1);
           this.burst(bx, by, '#BFEFFF', 16);
           this.hooks.audio?.bottle();
+          this.stats.bottles++;
           this.hooks.onBottle();
         }
       }
@@ -522,11 +606,49 @@ export class Engine {
     }
     this.particles = this.particles.filter((p) => p.life < p.max);
 
+    if (this.level && !this.finished && active && this.cam + ship.x >= this.level.length) this.finishLevel();
+
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
-      this.hooks.onHud({ altitude: Math.round(this.alt), zone: zoneFor(this.alt), inThermal });
+      this.hooks.onHud(this.hudState(inThermal));
     }
+  }
+
+  hudState(inThermal) {
+    const hud = { mode: this.mode, altitude: Math.round(this.alt), zone: zoneFor(this.alt), inThermal };
+    if (this.level) {
+      const b = bonusProgress(this.level.bonus, this.stats, this.sparksTotal);
+      Object.assign(hud, {
+        levelName: this.level.name,
+        progress: Math.round(clamp((this.cam + this.ship.x) / this.level.length, 0, 1) * 100),
+        sparks: this.stats.sparks,
+        sparkTarget: sparkTarget(this.sparksTotal),
+        bonusLabel: this.level.bonus.label,
+        bonusValue: b.value,
+        bonusTarget: b.target,
+        bonusDone: b.done,
+        bonusType: this.level.bonus.type,
+        weather: this.weather.type,
+        fog: this.weather.fog > 0,
+      });
+    }
+    return hud;
+  }
+
+  finishLevel() {
+    this.finished = true;
+    const stars = evaluateStars(this.level, this.stats, this.sparksTotal);
+    this.burst(this.ship.x, this.ship.y, '#FFD166', 40);
+    this.hooks.audio?.fanfare(stars.filter(Boolean).length);
+    this.hooks.onLevelComplete?.({
+      level: this.level,
+      stars,
+      sparks: this.stats.sparks,
+      total: this.sparksTotal,
+      target: sparkTarget(this.sparksTotal),
+      bonus: bonusProgress(this.level.bonus, this.stats, this.sparksTotal),
+    });
   }
 
   // ───────────────────────── rendering ─────────────────────────
@@ -556,6 +678,7 @@ export class Engine {
   }
 
   phase() {
+    if (this.theme) return clamp(this.theme.phase + Math.sin(this.time * 0.03) * 0.03, 0, 1);
     const base = 0.5 + 0.5 * Math.sin(this.time * 0.02 - 1.9);
     const lifted = clamp(base + Math.min(0.3, this.alt / 2500), 0, 1);
     // Above ~700 m the sky settles into deep twilight, so the upper zones feel starlit.
@@ -565,8 +688,8 @@ export class Engine {
   render() {
     const { ctx, w, h } = this;
     const p = this.phase();
-    const top = skyColor(p * 0.8);
-    const bottom = skyColor(Math.min(1, p * 0.8 + 0.3));
+    const top = this.theme?.sky?.top ?? skyColor(p * 0.8);
+    const bottom = this.theme?.sky?.bottom ?? skyColor(Math.min(1, p * 0.8 + 0.3));
 
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, rgb(top));
@@ -575,7 +698,7 @@ export class Engine {
     ctx.fillRect(0, 0, w, h);
 
     // Stars fade in as the sky goes to twilight or climbs high
-    const starA = clamp((1 - p) * 1.1 + Math.min(0.5, this.alt / 3000) - 0.1, 0, 1);
+    const starA = this.theme ? clamp(this.theme.stars * (1 - p * 0.6), 0, 1) : clamp((1 - p) * 1.1 + Math.min(0.5, this.alt / 3000) - 0.1, 0, 1);
     if (starA > 0.02) {
       for (const s of this.stars) {
         const tw = 0.6 + 0.4 * Math.sin(this.time * 1.5 + s.p);
@@ -586,7 +709,7 @@ export class Engine {
 
     // Low sun glow
     const glow = ctx.createRadialGradient(w * 0.78, h * 0.72, 0, w * 0.78, h * 0.72, h * 0.6);
-    glow.addColorStop(0, 'rgba(255,170,100,0.28)');
+    glow.addColorStop(0, `rgba(255,170,100,${0.28 * (this.theme?.glow ?? 1)})`);
     glow.addColorStop(1, 'rgba(255,170,100,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
@@ -595,26 +718,76 @@ export class Engine {
     this.drawMeteors();
 
     // Cloud Sea (≈300–800 m) is thick with cloud; higher air thins out.
-    const cloudBoost = 1 + 0.7 * clamp(1 - Math.abs(this.alt - 550) / 350, 0, 1) - 0.4 * clamp((this.alt - 1200) / 600, 0, 1);
+    const cloudBoost = this.theme ? this.theme.cloud : 1 + 0.7 * clamp(1 - Math.abs(this.alt - 550) / 350, 0, 1) - 0.4 * clamp((this.alt - 1200) / 600, 0, 1);
     this.drawClouds(0.06, 0.22, 1.7, 0.2 * cloudBoost, 0);
     this.drawClouds(0.16, 0.45, 1.2, 0.28 * cloudBoost, 1);
     this.drawClouds(0.32, 0.72, 0.9, 0.3 * cloudBoost, 2);
 
+    if (this.level) this.drawBeacon();
     for (const t of this.thermals) this.drawThermal(t);
     for (const isl of this.islands) this.drawIsland(isl);
     for (const s of this.sparks) this.drawSpark(s);
     for (const b of this.bottles) this.drawBottle(b.x - this.cam, b.y + Math.sin(this.time * 1.2 + b.p) * 8, 1);
     for (const o of this.outgoing) this.drawBottle(o.x - this.cam, o.y, Math.max(0, 1 - o.life / 6));
     for (const st of this.storms) this.drawStorm(st);
+
+    // Weather: heavy skies darken a little, fog swallows what is ahead (never the ship).
+    const wx = this.weather;
+    if (wx.precipitating && wx.type !== 'snow') {
+      ctx.fillStyle = `rgba(12,12,36,${0.2 * wx.intensity})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+    wx.drawFog(ctx, w, h, this.theme?.fog ?? [235, 230, 245]);
+
     this.drawParticles();
     this.drawShip();
 
     // Foreground wisps give depth
     this.drawClouds(0.9, 0.95, 0.7, 0.1, 1);
+    wx.drawOverlay(ctx, w, h, this.time);
+  }
+
+  /** The finish: a tall golden beam with a ring at its heart. Fog never hides it. */
+  drawBeacon() {
+    const { ctx, w, h } = this;
+    const x = this.level.length - this.cam;
+    if (x < -120 || x > w + 120) {
+      if (x > w + 120) {
+        // off-screen to the right: a small edge marker so the goal is always readable
+        const pulse = 0.6 + 0.4 * Math.sin(this.time * 3);
+        ctx.fillStyle = `rgba(255,209,102,${0.5 * pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(w - 6, h * 0.45 - 12);
+        ctx.lineTo(w - 6, h * 0.45 + 12);
+        ctx.lineTo(w - 20, h * 0.45);
+        ctx.closePath();
+        ctx.fill();
+      }
+      return;
+    }
+    const beam = ctx.createLinearGradient(x - 40, 0, x + 40, 0);
+    beam.addColorStop(0, 'rgba(255,209,102,0)');
+    beam.addColorStop(0.5, 'rgba(255,224,150,0.38)');
+    beam.addColorStop(1, 'rgba(255,209,102,0)');
+    ctx.fillStyle = beam;
+    ctx.fillRect(x - 40, 0, 80, h);
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.4);
+    for (let i = 0; i < 3; i++) {
+      const r = 34 + i * 20 + pulse * 6;
+      ctx.strokeStyle = `rgba(255,224,150,${0.75 - i * 0.2})`;
+      ctx.lineWidth = 3 - i * 0.7;
+      ctx.beginPath();
+      ctx.ellipse(x, h * 0.45, r * 0.55, r, 0, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('BEACON', x, h * 0.45 - 84);
   }
 
   drawAurora() {
-    const a = clamp((this.alt - 700) / 500, 0, 1);
+    const a = this.theme ? this.theme.aurora : clamp((this.alt - 700) / 500, 0, 1);
     if (a <= 0.01) return;
     const { ctx, w, h } = this;
     const colors = ['78,168,222', '155,123,255', '123,223,242'];
@@ -823,22 +996,26 @@ export class Engine {
       this.drawFlora(sp, fx, y - 4, grow, f.slot);
     }
 
-    // gentle affordance: a pulsing ring when tap-to-plant is possible
+    // Affordance: when the selected seed can be planted here, say so in words.
     const profile = this.hooks.getProfile();
     const sp = floraById[profile.selectedFlora] || FLORA[0];
-    if (!this.slow && isl.flora.length < isl.slots && isUnlocked(sp, profile.bestAltitude) && profile.sparks >= sp.cost && x > 20 && x < this.w - 20) {
+    if (!this.slow && isl.flora.length < isl.slots && isUnlocked(sp, profile.bestAltitude) && profile.sparks >= sp.cost && x > 60 && x < this.w - 60) {
       const pr = 0.5 + 0.5 * Math.sin(this.time * 3);
-      ctx.strokeStyle = `rgba(255,255,255,${0.25 + pr * 0.35})`;
-      ctx.lineWidth = 1.5;
+      const label = `Tap to plant ${sp.name}`;
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      const tw = ctx.measureText(label).width + 28;
+      const lx = clamp(x, tw / 2 + 10, this.w - tw / 2 - 10);
+      const ly = y - 84 - pr * 3;
+      ctx.fillStyle = 'rgba(30,28,58,0.62)';
+      ctx.strokeStyle = `rgba(255,255,255,${0.3 + pr * 0.3})`;
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(x, y - 40, 14 + pr * 3, 0, TAU);
+      ctx.roundRect(lx - tw / 2, ly - 14, tw, 28, 14);
+      ctx.fill();
       ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x - 5, y - 40);
-      ctx.lineTo(x + 5, y - 40);
-      ctx.moveTo(x, y - 45);
-      ctx.lineTo(x, y - 35);
-      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`+  ${label}`, lx, ly + 4);
     }
   }
 

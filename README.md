@@ -10,6 +10,9 @@ npm test         # API + storage tests (no database needed)
 ```
 
 ## Play
+- **Journey:** four worlds of four levels. Every level has one goal: **fly to the glowing Beacon**. Up to three optional stars: reach the Beacon, collect 60% of the sparks, finish the bonus challenge (updraft time, catch a bottle, no storm touches, or a high spark share). Each new star pays 15 sparks. There is no timer and no game over; a level unlocks once the previous one has a star.
+- **Weather:** worlds escalate from clear dawn skies to breezes, fog and rain, thunderstorms and snow. Fog hides what is ahead, and **wind gusts** warn you, then push the ship and loosen your steering for a couple of seconds. Lightning is light and sound only (calm mode switches the flashes off).
+- **Free Drift:** the original endless, goal-free mode with altitude zones.
 - **Touch and drag** anywhere to glide; the airship follows with weight and inertia.
 - **Golden updrafts** lift you higher (altitude zones shift the sky) and double spark pickups.
 - **Storms** never end the run — they cushion and bounce you back.
@@ -21,7 +24,9 @@ npm test         # API + storage tests (no database needed)
 - Installable: add to home screen for a fullscreen, offline-capable PWA (service worker is active in production builds only).
 
 ## Layout
-- `src/game/engine.js` – physics, procedural world, canvas renderer
+- `src/game/engine.js` – physics, procedural world, canvas renderer, level lifecycle
+- `src/game/levels.js` – worlds, levels, star and unlock rules (tested)
+- `src/game/weather.js` – rain, snow, fog, lightning, wind gusts
 - `src/audio/synth.js` – Web Audio wind, binaural drone, chord pad, chimes
 - `src/lib/` – storage (localStorage), flora, daily goals, wind-bottle client
 - `api/` – wind-bottle serverless function, storage adapter, moderation

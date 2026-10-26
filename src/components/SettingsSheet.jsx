@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Volume2, VolumeX, HelpCircle, Trash2 } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, Trash2, Flag, Wind } from 'lucide-react';
 import { GlassSheet } from './Glass.jsx';
 
 function Row({ children }) {
@@ -20,13 +20,21 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
-export default function SettingsSheet({ profile, onChange, onReplayTutorial, onReset, onClose }) {
+export default function SettingsSheet({ profile, onChange, onReplayTutorial, onReset, onJourney, onFreeDrift, onClose }) {
   const [confirming, setConfirming] = useState(false);
 
   return (
     <GlassSheet title="Paused" onClose={onClose}>
       <p className="mb-2 text-[15px] text-white/70">The sky is holding still. Take your time.</p>
 
+      <Row>
+        <span className="flex items-center gap-2 text-[16px]"><Flag size={18} /> Journey map</span>
+        <button onClick={onJourney} className="glass-button px-4 text-[15px]">Open</button>
+      </Row>
+      <Row>
+        <span className="flex items-center gap-2 text-[16px]"><Wind size={18} /> Free Drift</span>
+        <button onClick={onFreeDrift} className="glass-button px-4 text-[15px]">Switch</button>
+      </Row>
       <Row>
         <span className="flex items-center gap-2 text-[16px]">
           {profile.muted ? <VolumeX size={18} /> : <Volume2 size={18} />} Sound

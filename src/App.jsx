@@ -4,6 +4,7 @@ import { Synth } from './audio/synth.js';
 import { loadProfile, saveProfile, defaultProfile } from './lib/storage.js';
 import { bottleService } from './lib/bottles.js';
 import { floraById } from './lib/flora.js';
+import { nextLevel, levelById, STAR_REWARD } from './game/levels.js';
 import { addProgress, rollDaily, unclaimedDone, GOAL_REWARD } from './lib/daily.js';
 import Hud from './components/Hud.jsx';
 import StartScreen from './components/StartScreen.jsx';
@@ -12,22 +13,27 @@ import BottlesSheet, { CatchModal } from './components/BottlesSheet.jsx';
 import SettingsSheet from './components/SettingsSheet.jsx';
 import DailySheet from './components/DailySheet.jsx';
 import Tutorial from './components/Tutorial.jsx';
+import JourneySheet from './components/JourneySheet.jsx';
+import { LevelIntro, LevelComplete } from './components/LevelSheets.jsx';
 
 export default function App() {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const synthRef = useRef(null);
   const toastTimer = useRef(0);
+  const pendingMode = useRef(null); // mode to launch once the first-run tutorial ends
 
   const [profile, setProfile] = useState(loadProfile);
   const profileRef = useRef(profile);
   profileRef.current = profile;
 
   const [started, setStarted] = useState(false);
-  const [sheet, setSheet] = useState(null); // 'sanctuary' | 'bottles' | 'catch' | 'settings' | 'daily'
+  const [sheet, setSheet] = useState(null); // 'sanctuary' | 'bottles' | 'catch' | 'settings' | 'daily' | 'journey' | 'intro' | 'levelDone'
   const [tutorial, setTutorial] = useState(false);
   const [caught, setCaught] = useState(null);
-  const [hud, setHud] = useState({ altitude: 0, zone: 'Low Drift', inThermal: false });
+  const [level, setLevel] = useState(null); // level currently loaded in the engine
+  const [result, setResult] = useState(null); // last level-complete payload
+  const [hud, setHud] = useState({ mode: 'free', altitude: 0, zone: 'Low Drift', inThermal: false });
   const [toast, setToast] = useState('');
 
   const showToast = useCallback((msg) => {
@@ -67,9 +73,21 @@ export default function App() {
         setCaught(b);
         setProfile((p) => ({ ...p, caught: [b, ...p.caught].slice(0, 100), daily: addProgress(p.daily, 'bottle', 1) }));
       },
+      onLevelComplete: (r) => {
+        const count = r.stars.filter(Boolean).length;
+        const prev = profileRef.current.journey.stars[r.level.id] || 0;
+        const newStars = Math.max(0, count - prev);
+        setProfile((p) => ({
+          ...p,
+          sparks: p.sparks + newStars * STAR_REWARD,
+          journey: { ...p.journey, stars: { ...p.journey.stars, [r.level.id]: Math.max(count, p.journey.stars[r.level.id] || 0) } },
+        }));
+        setResult({ ...r, newStars });
+        setSheet('levelDone');
+      },
       onToast: showToast,
       onHud: (h) => {
-        setHud((prev) => (prev.altitude === h.altitude && prev.zone === h.zone && prev.inThermal === h.inThermal ? prev : h));
+        setHud((prev) => (Object.keys(h).length === Object.keys(prev).length && Object.keys(h).every((k) => prev[k] === h[k]) ? prev : h));
         const cur = profileRef.current;
         if (h.altitude > cur.bestAltitude || h.altitude > (rollDaily(cur.daily).progress.altitude || 0)) {
           setProfile((p) => ({
@@ -80,7 +98,7 @@ export default function App() {
         }
       },
     }));
-    if (import.meta.env.DEV) window.__kloudrift = engine; // test hook, dev builds only
+    if (import.meta.env.DEV) Object.assign(window, { __kloudrift: engine, __levels: levelById }); // test hooks, dev builds only
     engine.setCalm(profileRef.current.calm);
     engine.setSlow(true);
     engine.start();
@@ -110,12 +128,34 @@ export default function App() {
     engineRef.current?.setPaused(sheet === 'settings');
   }, [started, sheet, tutorial]);
 
-  const begin = () => {
+  const startFree = () => {
+    engineRef.current.startFree();
+    setLevel(null);
+    setSheet(null);
+    showToast('Free Drift — no goal, just sky');
+  };
+
+  const openLevel = (lvl) => {
+    engineRef.current.startLevel(lvl);
+    setLevel(lvl);
+    setSheet('intro');
+  };
+
+  const launch = (mode) => {
+    if (mode === 'journey') setSheet('journey');
+    else startFree();
+  };
+
+  const begin = (mode) => {
     synthRef.current.muted = profile.muted;
+    synthRef.current.volume = profile.volume;
     synthRef.current.start();
     setStarted(true);
-    if (profile.tutorialDone) showToast('Drag anywhere to glide');
-    else setTutorial(true);
+    if (profile.tutorialDone) launch(mode);
+    else {
+      pendingMode.current = mode;
+      setTutorial(true);
+    }
   };
 
   const toggleMute = () => updateSettings({ muted: !profile.muted });
@@ -130,6 +170,8 @@ export default function App() {
   const finishTutorial = () => {
     setTutorial(false);
     setProfile((p) => ({ ...p, tutorialDone: true }));
+    if (pendingMode.current) launch(pendingMode.current);
+    pendingMode.current = null;
   };
 
   const resetProgress = () => {
@@ -171,7 +213,7 @@ export default function App() {
         />
       )}
 
-      {!started && <StartScreen onBegin={begin} best={profile.bestAltitude} />}
+      {!started && <StartScreen onJourney={() => begin('journey')} onFree={() => begin('free')} best={profile.bestAltitude} stars={profile.journey.stars} />}
 
       {sheet === 'sanctuary' && (
         <SanctuarySheet
@@ -190,7 +232,26 @@ export default function App() {
             setTutorial(true);
           }}
           onReset={resetProgress}
+          onJourney={() => setSheet('journey')}
+          onFreeDrift={startFree}
           onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'journey' && <JourneySheet stars={profile.journey.stars} onPlay={openLevel} onFreeDrift={startFree} onClose={() => setSheet(null)} />}
+      {sheet === 'intro' && level && (
+        <LevelIntro level={level} best={profile.journey.stars[level.id] || 0} onFly={() => setSheet(null)} onMap={() => setSheet('journey')} />
+      )}
+      {sheet === 'levelDone' && result && (
+        <LevelComplete
+          result={result}
+          newStars={result.newStars}
+          hasNext={Boolean(nextLevel(result.level))}
+          onNext={() => openLevel(nextLevel(result.level))}
+          onRetry={() => {
+            engineRef.current.startLevel(result.level);
+            setSheet(null);
+          }}
+          onMap={() => setSheet('journey')}
         />
       )}
       {sheet === 'daily' && <DailySheet profile={profile} onClose={() => setSheet(null)} />}

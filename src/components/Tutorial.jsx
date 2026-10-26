@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Hand, Wind, Sprout } from 'lucide-react';
+import { Hand, Flag, Wind, Sprout } from 'lucide-react';
 
 const STEPS = [
   { icon: Hand, title: 'Glide', body: 'Touch and drag anywhere. Your airship follows, a little heavy and a lot calm.' },
-  { icon: Wind, title: 'Ride the updrafts', body: 'Golden rings lift you higher and double every spark you gather. Storms only ever bounce you softly.' },
-  { icon: Sprout, title: 'Grow and share', body: 'Spend sparks to tap-plant islands drifting below, and catch or release wind-bottles from the dock.' },
+  { icon: Flag, title: 'Reach the Beacon', body: 'In Journey, every level ends at a glowing Beacon. Earn up to three stars: reach it, gather sparks, and finish the bonus. There is no timer and no game over.' },
+  { icon: Wind, title: 'Weather and updrafts', body: 'Golden rings lift you and double sparks. Higher worlds bring rain, fog and wind gusts: hold steady and they pass. Storm clouds only bounce you.' },
+  { icon: Sprout, title: 'Plant and share', body: 'When a floating island shows “Tap to plant”, tap it to grow your selected seed with sparks. Catch or release wind-bottles from the dock.' },
 ];
 
 export default function Tutorial({ onDone }) {
