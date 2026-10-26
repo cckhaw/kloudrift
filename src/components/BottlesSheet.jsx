@@ -1,19 +1,23 @@
 import { useState } from 'react';
-import { Send, MailOpen } from 'lucide-react';
+import { Send, MailOpen, Flag } from 'lucide-react';
 import { GlassSheet } from './Glass.jsx';
-import { MAX_BOTTLE_LENGTH } from '../lib/bottles.js';
+import { MAX_BOTTLE_LENGTH, BottleRejected, REJECT_MESSAGES } from '../lib/bottles.js';
 
 export default function BottlesSheet({ profile, onRelease, onClose }) {
   const [tab, setTab] = useState('release');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const canSend = text.trim().length > 0 && !busy;
 
   const submit = async () => {
     if (!canSend) return;
     setBusy(true);
+    setError('');
     try {
       await onRelease(text);
+    } catch (err) {
+      setError(err instanceof BottleRejected ? REJECT_MESSAGES[err.reason] || 'That bottle could not be released.' : 'Could not release your bottle. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -48,7 +52,10 @@ export default function BottlesSheet({ profile, onRelease, onClose }) {
             id="bottle-text"
             value={text}
             maxLength={MAX_BOTTLE_LENGTH}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setError('');
+            }}
             placeholder="Something gentle for a stranger…"
             rows={4}
             className="w-full resize-none rounded-action border border-white/20 bg-white/10 p-3 text-[17px] text-white placeholder-white/40 outline-none focus:border-white/60"
@@ -56,6 +63,11 @@ export default function BottlesSheet({ profile, onRelease, onClose }) {
           <div className="mt-1 text-right text-[12px] tabular-nums text-white/50">
             {text.length}/{MAX_BOTTLE_LENGTH}
           </div>
+          {error && (
+            <p role="alert" className="mt-2 rounded-action border border-white/20 bg-white/10 p-3 text-[14px] text-white/90">
+              {error}
+            </p>
+          )}
           <button
             onClick={submit}
             disabled={!canSend}
@@ -78,6 +90,7 @@ export default function BottlesSheet({ profile, onRelease, onClose }) {
           {profile.caught.map((b) => (
             <li key={b.id} className="rounded-action border border-white/15 bg-white/10 p-3 text-[16px] leading-snug">
               “{b.text}”
+              {b.source === 'wanderer' && <span className="mt-1 block text-[12px] text-white/50">From another wanderer</span>}
             </li>
           ))}
         </ul>
@@ -86,7 +99,7 @@ export default function BottlesSheet({ profile, onRelease, onClose }) {
   );
 }
 
-export function CatchModal({ bottle, onClose }) {
+export function CatchModal({ bottle, onReport, onClose }) {
   return (
     <GlassSheet title="A bottle drifted to you" onClose={onClose}>
       <div className="flex flex-col items-center py-2 text-center">
@@ -96,7 +109,14 @@ export function CatchModal({ bottle, onClose }) {
         ) : (
           <p className="text-white/60">Unrolling the note…</p>
         )}
-        <p className="mt-4 text-[13px] text-white/50">Saved to your Caught bottles.</p>
+        <p className="mt-4 text-[13px] text-white/50">
+          {bottle?.source === 'wanderer' ? 'From another wanderer · saved to your Caught bottles.' : 'Saved to your Caught bottles.'}
+        </p>
+        {bottle?.source === 'wanderer' && (
+          <button onClick={() => onReport(bottle)} className="glass-button mt-3 flex items-center gap-1.5 px-4 text-[14px] text-white/70">
+            <Flag size={14} /> Report this bottle
+          </button>
+        )}
       </div>
     </GlassSheet>
   );
