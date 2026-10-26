@@ -37,7 +37,10 @@ export default function JourneySheet({ stars, onPlay, onFreeDrift, onClose }) {
           return (
             <section key={world.id} className="rounded-action border border-white/15 bg-white/10 p-3">
               <div className="flex items-baseline justify-between">
-                <h3 className="text-[17px] font-semibold">{world.name}</h3>
+                <h3 className="text-[17px] font-semibold">
+                  {world.name}
+                  {world.dim === '3d' && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 align-middle text-[11px] font-semibold tracking-wide">3D</span>}
+                </h3>
                 <span className="text-[13px] tabular-nums text-white/50">{worldStars}/{world.levels.length * 3} ★</span>
               </div>
               <p className="mb-2 text-[13px] text-white/60">{world.blurb}</p>

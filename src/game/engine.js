@@ -53,6 +53,7 @@ export class Engine {
     this.systemReduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     this.reduceMotion = this.systemReduceMotion;
     this.paused = false;
+    this.suspended = false; // true while a 3D level owns the screen
 
     this.w = 0;
     this.h = 0;
@@ -120,8 +121,10 @@ export class Engine {
       if (!this.running) return;
       const dt = Math.min(0.05, (now - this.last) / 1000);
       this.last = now;
-      this.update(this.paused ? 0 : dt * (this.slow ? 0.35 : 1));
-      this.render();
+      if (!this.suspended) {
+        this.update(this.paused ? 0 : dt * (this.slow ? 0.35 : 1));
+        this.render();
+      }
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -193,6 +196,12 @@ export class Engine {
     this.sparksTotal = this.sparks.length;
   }
 
+  setSuspended(v) {
+    this.suspended = v;
+    if (v) this.touching = false;
+    else this.last = performance.now();
+  }
+
   setPaused(v) {
     this.paused = v;
     if (v) this.touching = false;
@@ -232,7 +241,7 @@ export class Engine {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
     const down = (e) => {
-      if (this.slow || this.paused) return;
+      if (this.slow || this.paused || this.suspended) return;
       c.setPointerCapture?.(e.pointerId);
       const p = pos(e);
       this.touching = true;
