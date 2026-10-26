@@ -1,4 +1,5 @@
 // Wind-bottle API (Vercel serverless function; also served by the Vite dev server).
+//   GET  /api/bottles?status=1                      → { storage, durable }  which backend is active (no secrets)
 //   GET  /api/bottles?client=<id>&exclude=<id,id>   → { bottle | null }  a random bottle from another wanderer
 //   POST /api/bottles  { client, text }              → 201 { bottle }     release a bottle
 //   POST /api/bottles  { client, action:'report', id } → { ok }           flag a bottle (hidden after 2 reports)
@@ -44,6 +45,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       if ((await store.hit(`rl:get:${ip}`, 3600)) > READS_PER_HOUR) return send(res, 429, { error: 'slow_down' });
       const q = new URL(req.url, 'http://localhost').searchParams;
+      if (q.get('status')) return send(res, 200, { storage: store.kind, durable: store.durable });
       const client = q.get('client');
       if (!validClient(client)) return send(res, 400, { error: 'bad_client' });
       const exclude = new Set((q.get('exclude') || '').split(',').filter(Boolean).slice(0, 200));
